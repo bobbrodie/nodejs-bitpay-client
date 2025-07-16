@@ -49,8 +49,18 @@ jobs:
         id: changelog
         run: |
           git fetch --tags
-          prev_tag=$(git describe --tags --abbrev=0 HEAD^)
-          new_tag=$(git describe --tags --abbrev=0)
+
+          # Get most recent and previous tags
+          tags=($(git tag --sort=-creatordate))
+          new_tag="${tags[0]}"
+          prev_tag="${tags[1]}"
+
+          if [ -z "$prev_tag" ]; then
+            echo "Warning: No previous tag found. Skipping full changelog link."
+            changelog=""
+          else
+            changelog="**Full Changelog**: https://github.com/${{ github.repository }}/compare/$prev_tag...$new_tag"
+          fi
 
           prs=$(gh pr list --state merged --base "${{ github.ref_name }}" --json title,mergedAt --jq '[.[] | select(.mergedAt != null) | .title]')
           joined=$(echo "$prs" | jq -r '.[]' | sed 's/^/* /')
@@ -61,13 +71,14 @@ jobs:
           echo "## What's Changed" >> $GITHUB_ENV
           echo "$joined" >> $GITHUB_ENV
           echo "" >> $GITHUB_ENV
-          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$prev_tag...$new_tag" >> $GITHUB_ENV
+          echo "$changelog" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub release
         run: |
+          git fetch --tags
           tag=$(git describe --tags --abbrev=0)
           gh release create "$tag" --title "$tag" --notes "${{ env.RELEASE_NOTES }}"
         env:
