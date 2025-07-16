@@ -1,3 +1,5 @@
+TESTING
+
 <img src="https://bitpay.com/_nuxt/img/bitpay-logo-blue.1c0494b.svg" width="150">
 
 # BitPay NodeJS client
