@@ -3,9 +3,6 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      branch:
-        description: 'Branch to release from (e.g., 7.0.x)'
-        required: true
       bump:
         description: 'Version bump type'
         required: true
@@ -26,7 +23,7 @@ jobs:
       - name: Checkout target branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch }}
+          ref: ${{ github.ref_name }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -45,7 +42,7 @@ jobs:
           git add package.json package-lock.json
           git commit -m "Bump version to $version"
           git tag $version
-          git push origin ${{ github.event.inputs.branch }}
+          git push origin ${{ github.ref_name }}
           git push origin $version
 
       - name: Get merged PR titles and format release notes
@@ -54,7 +51,7 @@ jobs:
           prev_tag=$(git describe --tags --abbrev=0 HEAD^)
           new_tag=$(git describe --tags --abbrev=0)
 
-          prs=$(gh pr list --state merged --base "${{ github.event.inputs.branch }}" --json title,mergedAt --jq '[.[] | select(.mergedAt != null) | .title]')
+          prs=$(gh pr list --state merged --base "${{ github.ref_name }}" --json title,mergedAt --jq '[.[] | select(.mergedAt != null) | .title]')
           joined=$(echo "$prs" | jq -r '.[]' | sed 's/^/* /')
 
           echo "RELEASE_NOTES<<EOF" >> $GITHUB_ENV
