@@ -1,43 +1,115 @@
-on:
-  release:
-    types:
-      - published
+name: Release
 
-name: release
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to release from (e.g., 7.0.x)'
+        required: true
+      bump:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      overview:
+        description: 'Release overview (will be placed at top of notes)'
+        required: true
 
 jobs:
-  readme-changelog:
-    name: Publish changelog to Readme
+  release:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Extract release data
-        id: release
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bump version
+        run: npm version ${{ github.event.inputs.bump }}
+
+      - name: Push version bump and tag
         run: |
-          echo "title=${{ github.event.release.name }}" >> $GITHUB_OUTPUT
-          {
-            echo "body<<EOF"
-            echo "${{ github.event.release.body }}"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git push origin ${{ github.event.inputs.branch }}
+          git push --tags
 
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Get merged PR titles and format release notes
+        id: changelog
+        run: |
+          prev_tag=$(git describe --tags --abbrev=0 HEAD^)
+          new_tag=$(git describe --tags --abbrev=0)
 
-      - name: Publish changelog to Readme
+          prs=$(gh pr list --state merged --base "${{ github.event.inputs.branch }}" --json title,mergedAt --jq '[.[] | select(.mergedAt != null) | .title]')
+          joined=$(echo "$prs" | jq -r '.[]' | sed 's/^/* /')
+
+          echo "RELEASE_NOTES<<EOF" >> $GITHUB_ENV
+          echo "${{ github.event.inputs.overview }}" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "## What's Changed" >> $GITHUB_ENV
+          echo "$joined" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$prev_tag...$new_tag" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
         env:
-          README_API_KEY: ${{ secrets.README_API_KEY }}
-        run: |
-          jq -n --arg title "Node.js Unified SDK v${{ steps.release.outputs.title }}" \
-                --arg body "${{ steps.release.outputs.body }}" \
-                '{
-                  title: $title,
-                  content: {
-                    body: $body
-                  },
-                  privacy: { view: "public" }
-                }' > payload.json
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          curl --location 'https://api.readme.com/v2/changelogs' \
-            --header "Authorization: Bearer $README_API_KEY" \
-            --header 'Content-Type: application/json' \
-            --data @payload.json
+      - name: Create GitHub release
+        run: |
+          tag=$(git describe --tags --abbrev=0)
+          gh release create "$tag" --title "$tag" --notes "${{ env.RELEASE_NOTES }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # readme-changelog:
+  #   name: Publish changelog to Readme
+  #   needs: release
+  #   runs-on: ubuntu-latest
+
+  #   steps:
+  #     - name: Extract release data
+  #       id: release
+  #       run: |
+  #         echo "title=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+  #         body=$(gh release view ${{ github.ref_name }} --json body --jq .body)
+  #         {
+  #           echo "body<<EOF"
+  #           echo "$body"
+  #           echo "EOF"
+  #         } >> $GITHUB_OUTPUT
+  #       env:
+  #         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  #     - name: Install jq
+  #       run: sudo apt-get update && sudo apt-get install -y jq
+
+  #     - name: Publish changelog to Readme
+  #       env:
+  #         README_API_KEY: ${{ secrets.README_API_KEY }}
+  #       run: |
+  #         jq -n --arg title "Node.js Unified SDK v${{ steps.release.outputs.title }}" \
+  #               --arg body "${{ steps.release.outputs.body }}" \
+  #               '{
+  #                 title: $title,
+  #                 content: {
+  #                   body: $body
+  #                 },
+  #                 privacy: { view: "public" }
+  #               }' > payload.json
+
+  #         curl --location 'https://api.readme.com/v2/changelogs' \
+  #           --header "Authorization: Bearer $README_API_KEY" \
+  #           --header 'Content-Type: application/json' \
+  #           --data @payload.json
