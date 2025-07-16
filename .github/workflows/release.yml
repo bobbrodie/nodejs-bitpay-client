@@ -37,7 +37,7 @@ jobs:
         run: npm ci
 
       - name: Bump version
-        run: npm version ${{ github.event.inputs.bump }}
+        run: npm version ${{ github.event.inputs.bump }} --no-git-tag-version
 
       - name: Push version bump and tag
         run: |
