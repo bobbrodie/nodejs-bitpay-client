@@ -35,6 +35,7 @@ jobs:
 
       - name: Push version bump and tag
         run: |
+          git fetch --tags
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           npm version ${{ github.event.inputs.bump }} --no-git-tag-version
